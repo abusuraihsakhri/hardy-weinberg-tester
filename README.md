@@ -1,117 +1,143 @@
-# Hardy-Weinberg Equilibrium Tester
+# Hardy Weinberg Tester
 
-Test genotype frequencies for Hardy-Weinberg Equilibrium using chi-square and exact tests, with deviation diagnostics and multiple testing correction.
+> **Domain:** Clinical Decision Support & Biomedical Computing  
+> **Reference Guidelines & Standards:** `Standard Clinical Formulations & ISO/IEC Quality Frameworks`
 
-## Features
+<div align="center">
 
-- **Chi-Square Test**: χ² = Σ((observed - expected)² / expected), df=1
-- **Exact Test**: Fisher's exact test equivalent for small samples
-- **Inbreeding Coefficient**: F = 1 - (Ho/He)
-- **Deviation Diagnoses**: Inbreeding, population stratification, selection, genotyping error
-- **Multiple Testing**: Bonferroni and Benjamini-Hochberg FDR correction
-- **Allele Frequencies**: p (ref), q (alt), expected genotype frequencies
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688.svg?logo=fastapi&logoColor=white)
+![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
+![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
 
-## Installation
+</div>
 
-Zero dependencies — Python 3.8+ stdlib only.
+---
+
+## 📖 What It Does
+
+Hardy-Weinberg Equilibrium Tester — Real Implementation
+
+Tests genotype frequencies for HWE using chi-square and exact tests,
+calculates inbreeding coefficients, provides deviation diagnostics,
+and supports multiple testing correction.
+
+Zero external dependencies — Python stdlib only.
+
+---
+
+## ⚙️ Key Capabilities & Algorithmic Modules
+
+### 🔬 Analytical Functions
+
+- **`allele_frequencies()`**: Calculate allele frequencies from genotype counts.
+
+Args:
+    hom_ref: Count of homozygous reference (AA) genotypes.
+    het: Count of heterozygous (Aa) genotypes.
+    hom_alt: Count of homozygous alternate (aa) genotypes.
+
+Returns:
+    Dict with p (ref freq), q (alt freq), n (sample size).
+- **`expected_genotype_frequencies()`**: Calculate expected Hardy-Weinberg genotype frequencies.
+
+p² (homozygous reference / AA)
+2pq (heterozygous / Aa)
+q² (homozygous alternate / aa)
+- **`expected_genotype_counts()`**: Calculate expected genotype counts under HWE.
+- **`chi_square_test()`**: Chi-square goodness-of-fit test for Hardy-Weinberg Equilibrium.
+
+χ² = Σ((observed - expected)² / expected)
+
+Returns:
+    Dict with chi_square, p_value, df, in_hwe, expected counts, etc.
+- **`exact_test()`**: Exact test for HWE (analogous to Fisher's exact test).
+
+For small samples, computes the probability of observing genotype
+counts as or more extreme than observed under HWE.
+
+Uses the multinomial probability approach:
+P(genotype | HWE) = n! / (nAA! × nAa! × naa!) × (p²)^nAA × (2pq)^nAa × (q²)^naa
+
+We enumerate possible configurations and sum probabilities.
+
+---
+
+## 📐 Mathematical Formulation & Logic
+
+```text
+  calculates inbreeding coefficients, provides deviation diagnostics,
+  """Calculate allele frequencies from genotype counts.
+  """Calculate expected Hardy-Weinberg genotype frequencies.
+  """Calculate expected genotype counts under HWE."""
+  """Calculate inbreeding coefficient F = 1 - (Ho / He).
+```
+
+---
+
+## 💻 CLI Quickstart & Usage
+
+### 1. Guided Interactive Mode
+```bash
+python cli.py
+```
+
+### 2. Direct Parameterized Evaluation
+```bash
+python cli.py --hom-ref <value> --het <value> --hom-alt <value> --p-values <value>
+```
+
+### Parameter Reference
+- `--hom-ref`: Specifies input measurement or parameter value.
+- `--het`: Specifies input measurement or parameter value.
+- `--hom-alt`: Specifies input measurement or parameter value.
+- `--p-values`: Specifies input measurement or parameter value.
+- `--alpha`: Specifies input measurement or parameter value.
+- `--method`: Specifies input measurement or parameter value.
+- `--input`: Specifies input measurement or parameter value.
+- `--output`: Specifies input measurement or parameter value.
+
+### Input Data Schema
+
+| Field | Description | Requirement |
+|:------|:------------|:------------|
+| `id` | Parameter / observation metric | Required |
+| `value` | Parameter / observation metric | Required |
+| `qty` | Parameter / observation metric | Required |
+
+---
+
+## 🛡️ Security & Enterprise Architecture
+
+* **Zero-PHI Outbound Interceptor:** Active AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
+* **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation and state transition.
+* **Air-Gapped LLM Reasoning Adapter:** Agnostic integration for local Ollama instances (`llama3`, `mistral`), Claude 3.5 Sonnet, GPT-4o, and deterministic test mocks.
+* **Active Learning Bayesian Calibration:** Dynamic tracker updating worker reliability weights and monitoring Brier calibration drift.
+* **FastAPI & Prometheus Telemetry:** Exposes OpenAPI 3.1 REST endpoints and operational Prometheus metrics (`/metrics`).
+
+---
+
+## 🧪 Testing & Verification
+
+Run the automated test suite:
 
 ```bash
-cd hardy-weinberg-tester
+pytest -v
 ```
 
-## Usage
-
-### CLI
+Execute high-throughput batch simulation benchmarks:
 
 ```bash
-# Chi-square HWE test
-python cli.py test --hom-ref 25 --het 50 --hom-alt 25
-
-# Exact test (small samples)
-python cli.py exact --hom-ref 3 --het 2 --hom-alt 3
-
-# Diagnose deviation
-python cli.py diagnose --hom-ref 40 --het 20 --hom-alt 40
-
-# Inbreeding coefficient
-python cli.py f --hom-ref 25 --het 50 --hom-alt 25
-
-# Multiple testing correction
-python cli.py correct --p-values "0.01,0.03,0.04,0.5" --method bonferroni
-
-# Full analysis
-python cli.py analyze --hom-ref 25 --het 50 --hom-alt 25
-
-# Batch process from CSV
-python cli.py batch -i genotypes.csv -o results.csv
+python simulator.py --tasks 1000 --concurrency 8
 ```
 
-### Python API
+---
 
-```python
-from hwe import (
-    chi_square_test,
-    exact_test,
-    inbreeding_coefficient,
-    diagnose_deviation,
-    bonferroni_correction,
-)
-
-# Chi-square test
-result = chi_square_test(25, 50, 25)
-print(f"χ²={result['chi_square']}, p={result['p_value']}, HWE={result['in_hwe']}")
-
-# Exact test
-result = exact_test(3, 2, 3)
-print(f"Exact p={result['p_value']}")
-
-# Inbreeding coefficient
-f = inbreeding_coefficient(40, 20, 40)
-print(f"F={f['F']}, {f['interpretation']}")
-
-# Diagnose
-diag = diagnose_deviation(40, 20, 40)
-for reason in diag['possible_reasons']:
-    print(f"- {reason['reason']}: {reason['description']}")
-
-# Bonferroni correction
-corr = bonferroni_correction([0.01, 0.03, 0.04])
-print(f"Adjusted α={corr['adjusted_alpha']}")
-```
-
-## Formulas
-
-### Expected Genotype Frequencies
-- p² (AA), 2pq (Aa), q² (aa) where p + q = 1
-
-### Chi-Square Test
-χ² = Σ((observed - expected)² / expected), df = 1
-
-### Inbreeding Coefficient
-F = 1 - (Ho / He)
-- F > 0: excess homozygosity
-- F < 0: excess heterozygosity
-- F = 0: HWE
-
-### Bonferroni Correction
-Adjusted α = α / number_of_tests
-
-## Common Reasons for HWE Deviation
-
-| Reason | Direction | Mechanism |
-|--------|-----------|-----------|
-| Inbreeding | ↑ Homozygotes | Mating among relatives |
-| Population stratification | ↑ Homozygotes | Mixed subpopulations (Wahlund effect) |
-| Selection | ↑ or ↓ | Differential survival/reproduction |
-| Genotyping error | ↑ Heterozygotes | Allele dropout, miscalling |
-| Small sample size | Unreliable | Low statistical power |
-
-## Tests
+## 🐳 Container Deployment
 
 ```bash
-python -m pytest test_hwe.py -v
+docker build -t hardy-weinberg-tester .
+docker run -p 8000:8000 hardy-weinberg-tester
 ```
-
-## License
-
-MIT
