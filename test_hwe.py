@@ -247,5 +247,124 @@ class TestBatchProcessing:
         assert 'in_hwe' in results[0]
 
 
+# ---------------------------------------------------------------------------
+# Input Validation Tests
+# ---------------------------------------------------------------------------
+
+class TestInputValidation:
+    """Tests for genotype count validation."""
+
+    def test_negative_hom_ref_raises(self):
+        with pytest.raises(ValueError, match="hom_ref.*non-negative"):
+            allele_frequencies(-1, 50, 25)
+
+    def test_negative_het_raises(self):
+        with pytest.raises(ValueError, match="het.*non-negative"):
+            chi_square_test(25, -5, 25)
+
+    def test_negative_hom_alt_raises(self):
+        with pytest.raises(ValueError, match="hom_alt.*non-negative"):
+            inbreeding_coefficient(25, 50, -10)
+
+    def test_float_input_raises(self):
+        with pytest.raises(TypeError, match="must be an integer"):
+            chi_square_test(25.5, 50, 25)
+
+    def test_string_input_raises(self):
+        with pytest.raises(TypeError, match="must be an integer"):
+            exact_test("25", 50, 25)
+
+    def test_exact_test_validation(self):
+        with pytest.raises(ValueError, match="hom_ref.*non-negative"):
+            exact_test(-1, 1, 2)
+
+    def test_inbreeding_validation(self):
+        with pytest.raises(ValueError, match="het.*non-negative"):
+            inbreeding_coefficient(10, -5, 10)
+
+    def test_diagnose_validation(self):
+        with pytest.raises(ValueError, match="hom_alt.*non-negative"):
+            diagnose_deviation(10, 5, -1)
+
+    def test_full_analysis_validation(self):
+        with pytest.raises(ValueError, match="hom_ref.*non-negative"):
+            full_hwe_analysis(-5, 10, 10)
+
+    def test_valid_zero_counts(self):
+        """Zero counts are valid (edge case)."""
+        result = allele_frequencies(0, 0, 0)
+        assert result['n'] == 0
+
+
+# ---------------------------------------------------------------------------
+# Multiple Testing Correction Validation Tests
+# ---------------------------------------------------------------------------
+
+class TestCorrectionValidation:
+    """Tests for p-value validation in correction functions."""
+
+    def test_bonferroni_invalid_pvalue_raises(self):
+        with pytest.raises(ValueError, match="outside valid range"):
+            bonferroni_correction([0.01, 1.5, 0.03])
+
+    def test_bonferroni_negative_pvalue_raises(self):
+        with pytest.raises(ValueError, match="outside valid range"):
+            bonferroni_correction([-0.01, 0.03])
+
+    def test_bh_invalid_pvalue_raises(self):
+        with pytest.raises(ValueError, match="outside valid range"):
+            benjamini_hochberg_correction([0.01, 2.0])
+
+    def test_bonferroni_invalid_alpha_raises(self):
+        with pytest.raises(ValueError, match="alpha must be in"):
+            bonferroni_correction([0.01, 0.03], alpha=0.0)
+
+    def test_bonferroni_large_alpha_raises(self):
+        with pytest.raises(ValueError, match="alpha must be in"):
+            bonferroni_correction([0.01], alpha=1.5)
+
+
+# ---------------------------------------------------------------------------
+# Batch Processing Error Handling Tests
+# ---------------------------------------------------------------------------
+
+class TestBatchErrorHandling:
+    """Tests for batch processing error handling."""
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            process_batch(str(tmp_path / "nonexistent.csv"), str(tmp_path / "out.csv"))
+
+    def test_missing_columns_raises(self, tmp_path):
+        csv_in = tmp_path / 'bad.csv'
+        csv_in.write_text('foo,bar,baz\n1,2,3\n', encoding='utf-8')
+        with pytest.raises(ValueError, match="CSV must contain columns"):
+            process_batch(str(csv_in), str(tmp_path / "out.csv"))
+
+    def test_invalid_data_raises(self, tmp_path):
+        csv_in = tmp_path / 'bad.csv'
+        csv_in.write_text('hom_ref,het,hom_alt\nabc,50,25\n', encoding='utf-8')
+        with pytest.raises(ValueError, match="Invalid value"):
+            process_batch(str(csv_in), str(tmp_path / "out.csv"))
+
+    def test_missing_values_raises(self, tmp_path):
+        csv_in = tmp_path / 'bad.csv'
+        csv_in.write_text('hom_ref,het,hom_alt\n,50,25\n', encoding='utf-8')
+        with pytest.raises(ValueError, match="Missing value"):
+            process_batch(str(csv_in), str(tmp_path / "out.csv"))
+
+    def test_alternative_column_names(self, tmp_path):
+        csv_in = tmp_path / 'in.csv'
+        csv_out = tmp_path / 'out.csv'
+        csv_in.write_text(
+            'AA,Aa,aa\n'
+            '25,50,25\n',
+            encoding='utf-8'
+        )
+        results = process_batch(str(csv_in), str(csv_out))
+        assert len(results) == 1
+        assert results[0]['in_hwe'] is True
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

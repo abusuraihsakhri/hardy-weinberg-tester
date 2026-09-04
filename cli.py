@@ -10,6 +10,9 @@ Subcommands:
   correct   — Multiple testing correction
   analyze   — Full HWE analysis
   batch     — Batch process from CSV
+  audit     — Dispatch task payload across workers
+  chat      — Air-gapped supervisory conversational assistant
+  verify-audit — Retrieve and verify HMAC audit trail
 """
 import argparse
 import json
@@ -27,6 +30,10 @@ from hwe import (
     full_hwe_analysis,
     process_batch,
 )
+
+from agents.supervisor import SystemSupervisor
+from agents.base import AuditLogger
+from agents.models import SystemTaskPayload
 
 
 def cmd_test(args):
@@ -73,6 +80,38 @@ def cmd_batch(args):
     """Batch process from CSV."""
     results = process_batch(args.input, args.output)
     print(f"Processed {len(results)} loci -> {args.output}")
+
+
+def cmd_audit(args):
+    """Dispatch task payload across workers."""
+    supervisor = SystemSupervisor(model_provider="mock")
+    payload = SystemTaskPayload(
+        task_id=args.task_id,
+        target_identifier=args.target_id,
+        primary_metric=args.primary_metric,
+        secondary_metric=args.secondary_metric,
+        status_descriptor=args.status_descriptor,
+        is_critical_flag=args.is_critical,
+    )
+    dossier = supervisor.process_task(payload)
+    print(json.dumps(dossier.to_dict(), indent=2, default=str))
+    return 0
+
+
+def cmd_chat(args):
+    """Air-gapped supervisory conversational assistant."""
+    supervisor = SystemSupervisor(model_provider="mock")
+    response = supervisor.query_supervisory_chat(" ".join(args.query))
+    print(json.dumps({"response": response}, indent=2))
+    return 0
+
+
+def cmd_verify_audit(args):
+    """Retrieve and verify HMAC audit trail."""
+    trail = AuditLogger.get_trail()
+    verified = AuditLogger.verify_integrity()
+    print(json.dumps({"audit_trail": trail, "verified": verified, "block_count": len(trail)}, indent=2, default=str))
+    return 0
 
 
 def main(argv=None):
@@ -127,8 +166,27 @@ def main(argv=None):
     p_batch.add_argument('-o', '--output', default='results.csv', help='Output CSV')
     p_batch.set_defaults(func=cmd_batch)
 
+    # audit
+    p_audit = subparsers.add_parser('audit', help='Dispatch task payload across workers')
+    p_audit.add_argument('--task-id', required=True, help='Task identifier')
+    p_audit.add_argument('--target-id', default='SPECIMEN-001', help='Target identifier')
+    p_audit.add_argument('--primary-metric', type=float, default=10.0, help='Primary metric value')
+    p_audit.add_argument('--secondary-metric', type=float, default=5.0, help='Secondary metric value')
+    p_audit.add_argument('--status-descriptor', default='NOMINAL', help='Status descriptor')
+    p_audit.add_argument('--is-critical', action='store_true', help='Critical flag')
+    p_audit.set_defaults(func=cmd_audit)
+
+    # chat
+    p_chat = subparsers.add_parser('chat', help='Air-gapped supervisory conversational assistant')
+    p_chat.add_argument('query', nargs='+', help='Query text')
+    p_chat.set_defaults(func=cmd_chat)
+
+    # verify-audit
+    p_verify = subparsers.add_parser('verify-audit', help='Retrieve and verify HMAC audit trail')
+    p_verify.set_defaults(func=cmd_verify_audit)
+
     args = parser.parse_args(argv)
-    args.func(args)
+    return args.func(args)
 
 
 if __name__ == '__main__':

@@ -16,6 +16,24 @@ from typing import Dict, Any, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
+# Validation Helpers
+# ---------------------------------------------------------------------------
+
+def _validate_genotype_counts(hom_ref: int, het: int, hom_alt: int) -> None:
+    """Validate genotype counts are non-negative integers.
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
+    """
+    for name, val in [('hom_ref', hom_ref), ('het', het), ('hom_alt', hom_alt)]:
+        if not isinstance(val, int):
+            raise TypeError(f"{name} must be an integer, got {type(val).__name__}")
+        if val < 0:
+            raise ValueError(f"{name} must be non-negative, got {val}")
+
+
+# ---------------------------------------------------------------------------
 # Core HWE Calculations
 # ---------------------------------------------------------------------------
 
@@ -29,7 +47,12 @@ def allele_frequencies(hom_ref: int, het: int, hom_alt: int) -> Dict[str, float]
 
     Returns:
         Dict with p (ref freq), q (alt freq), n (sample size).
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
     """
+    _validate_genotype_counts(hom_ref, het, hom_alt)
     n = hom_ref + het + hom_alt
     if n == 0:
         return {'p': 0.0, 'q': 0.0, 'n': 0}
@@ -89,7 +112,12 @@ def chi_square_test(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
 
     Returns:
         Dict with chi_square, p_value, df, in_hwe, expected counts, etc.
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
     """
+    _validate_genotype_counts(hom_ref, het, hom_alt)
     n = hom_ref + het + hom_alt
     if n == 0:
         return {'chi_square': 0.0, 'p_value': 1.0, 'df': 1, 'in_hwe': True,
@@ -196,7 +224,12 @@ def exact_test(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
     P(genotype | HWE) = n! / (nAA! × nAa! × naa!) × (p²)^nAA × (2pq)^nAa × (q²)^naa
 
     We enumerate possible configurations and sum probabilities.
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
     """
+    _validate_genotype_counts(hom_ref, het, hom_alt)
     n = hom_ref + het + hom_alt
     if n == 0:
         return {'p_value': 1.0, 'method': 'exact', 'error': 'No genotypes observed'}
@@ -290,7 +323,12 @@ def inbreeding_coefficient(hom_ref: int, het: int, hom_alt: int) -> Dict[str, An
     F > 0: excess homozygosity (inbreeding, Wahlund effect)
     F < 0: excess heterozygosity (outbreeding, selection)
     F = 0: consistent with HWE
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
     """
+    _validate_genotype_counts(hom_ref, het, hom_alt)
     n = hom_ref + het + hom_alt
     if n == 0:
         return {'F': 0.0, 'interpretation': 'No data', 'n': 0}
@@ -346,7 +384,12 @@ def diagnose_deviation(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
         2. Excess heterozygosity (outbreeding, selection, genotyping error)
         3. Small sample size warning
         4. Rare allele warning
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
     """
+    _validate_genotype_counts(hom_ref, het, hom_alt)
     n = hom_ref + het + hom_alt
     freqs = allele_frequencies(hom_ref, het, hom_alt)
     p, q = freqs['p'], freqs['q']
@@ -420,7 +463,15 @@ def bonferroni_correction(p_values: List[float],
 
     Adjusted alpha = alpha / number_of_tests.
     A test is significant if p_value < adjusted_alpha.
+
+    Raises:
+        ValueError: If any p_value is not in [0, 1] or alpha is not in (0, 1].
     """
+    if not 0 < alpha <= 1:
+        raise ValueError(f"alpha must be in (0, 1], got {alpha}")
+    for i, p in enumerate(p_values):
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"p_values[{i}] = {p} is outside valid range [0, 1]")
     m = len(p_values)
     if m == 0:
         return {'adjusted_alpha': alpha, 'results': [], 'num_tests': 0}
@@ -453,7 +504,15 @@ def benjamini_hochberg_correction(p_values: List[float],
 
     Controls false discovery rate rather than family-wise error rate.
     Less conservative than Bonferroni.
+
+    Raises:
+        ValueError: If any p_value is not in [0, 1] or alpha is not in (0, 1].
     """
+    if not 0 < alpha <= 1:
+        raise ValueError(f"alpha must be in (0, 1], got {alpha}")
+    for i, p in enumerate(p_values):
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"p_values[{i}] = {p} is outside valid range [0, 1]")
     m = len(p_values)
     if m == 0:
         return {'results': [], 'num_tests': 0}
@@ -490,7 +549,13 @@ def benjamini_hochberg_correction(p_values: List[float],
 # ---------------------------------------------------------------------------
 
 def full_hwe_analysis(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
-    """Complete HWE analysis combining all methods and diagnostics."""
+    """Complete HWE analysis combining all methods and diagnostics.
+
+    Raises:
+        TypeError: If any count is not an integer.
+        ValueError: If any count is negative.
+    """
+    _validate_genotype_counts(hom_ref, het, hom_alt)
     chi = chi_square_test(hom_ref, het, hom_alt)
     exact = exact_test(hom_ref, het, hom_alt)
     f_coeff = inbreeding_coefficient(hom_ref, het, hom_alt)
@@ -512,25 +577,81 @@ def full_hwe_analysis(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
 # Batch Processing
 # ---------------------------------------------------------------------------
 
+def _parse_genotype_value(value: Any, field_name: str, row_num: int) -> int:
+    """Parse a genotype count from CSV, with clear error messages."""
+    if value is None or (isinstance(value, str) and value.strip() == ''):
+        raise ValueError(
+            f"Row {row_num}: Missing value for '{field_name}'. "
+            f"Expected columns: hom_ref, het, hom_alt (or AA, Aa, aa)."
+        )
+    try:
+        parsed = int(value)
+    except (ValueError, TypeError) as e:
+        raise ValueError(
+            f"Row {row_num}: Invalid value '{value}' for '{field_name}'. "
+            f"Must be a non-negative integer."
+        ) from e
+    if parsed < 0:
+        raise ValueError(
+            f"Row {row_num}: Negative value {parsed} for '{field_name}'. "
+            f"Genotype counts must be non-negative."
+        )
+    return parsed
+
+
 def process_batch(input_csv: str, output_csv: str) -> List[Dict[str, Any]]:
     """Process a CSV of genotype counts and test each for HWE.
 
     Expected CSV columns: hom_ref (or AA), het (or Aa), hom_alt (or aa).
+    Each row is tested for HWE and results are written to output_csv.
+
+    Args:
+        input_csv: Path to input CSV with genotype counts.
+        output_csv: Path to output CSV for results.
+
+    Returns:
+        List of result dicts, one per input row.
+
+    Raises:
+        FileNotFoundError: If input_csv does not exist.
+        ValueError: If CSV is missing required columns or has invalid data.
     """
+    import os
+    if not os.path.isfile(input_csv):
+        raise FileNotFoundError(f"Input CSV not found: {input_csv}")
+
     with open(input_csv, mode='r', encoding='utf-8-sig') as f:
         reader = csv.DictReader(f)
         fieldnames = list(reader.fieldnames or [])
+        if not fieldnames:
+            raise ValueError(f"CSV file has no headers: {input_csv}")
         rows = list(reader)
+
+    # Detect column naming convention
+    has_standard = {'hom_ref', 'het', 'hom_alt'}.issubset(set(fieldnames))
+    has_aa = {'AA', 'Aa', 'aa'}.issubset(set(fieldnames))
+    if not has_standard and not has_aa:
+        raise ValueError(
+            f"CSV must contain columns (hom_ref, het, hom_alt) or (AA, Aa, aa). "
+            f"Found: {fieldnames}"
+        )
 
     out_fields = fieldnames + ['p_value', 'chi_square', 'F', 'in_hwe', 'deviation_type']
     out_rows = []
     p_values = []
 
-    for r in rows:
-        # Try various column name conventions
-        hom_ref = int(r.get('hom_ref', r.get('AA', r.get('homozygous_ref', 0))))
-        het = int(r.get('het', r.get('Aa', r.get('heterozygous', 0))))
-        hom_alt = int(r.get('hom_alt', r.get('aa', r.get('homozygous_alt', 0))))
+    for idx, r in enumerate(rows, start=1):
+        try:
+            if has_standard:
+                hom_ref = _parse_genotype_value(r.get('hom_ref'), 'hom_ref', idx)
+                het = _parse_genotype_value(r.get('het'), 'het', idx)
+                hom_alt = _parse_genotype_value(r.get('hom_alt'), 'hom_alt', idx)
+            else:
+                hom_ref = _parse_genotype_value(r.get('AA'), 'AA', idx)
+                het = _parse_genotype_value(r.get('Aa'), 'Aa', idx)
+                hom_alt = _parse_genotype_value(r.get('aa'), 'aa', idx)
+        except ValueError:
+            raise
 
         chi = chi_square_test(hom_ref, het, hom_alt)
         f_coeff = inbreeding_coefficient(hom_ref, het, hom_alt)
