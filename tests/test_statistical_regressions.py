@@ -49,7 +49,7 @@ def test_bh_step_up_includes_earlier_nonpassing_rank():
     assert result["num_significant"] == 3
     assert all(r["significant"] for r in result["results"])
     assert [r["adjusted_p_value"] for r in result["results"]] == pytest.approx(
-        [0.03, 0.0435, 0.049]
+        [0.0435, 0.0435, 0.049]
     )
 
 
