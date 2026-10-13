@@ -567,6 +567,16 @@ def _parse_genotype_value(value: Any, field_name: str, row_num: int) -> int:
     return parsed
 
 
+def _protect_spreadsheet_cell(value: Any) -> Any:
+    """Prevent spreadsheet applications from evaluating imported text as formulas.
+
+    Applies only to source strings, not computed numerical output.
+    """
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def process_batch(input_csv: str, output_csv: str) -> List[Dict[str, Any]]:
     """Process a CSV of genotype counts and test each for HWE.
 
@@ -624,7 +634,7 @@ def process_batch(input_csv: str, output_csv: str) -> List[Dict[str, Any]]:
         chi = chi_square_test(hom_ref, het, hom_alt)
         f_coeff = inbreeding_coefficient(hom_ref, het, hom_alt)
 
-        row_dict = dict(r)
+        row_dict = {key: _protect_spreadsheet_cell(value) for key, value in r.items()}
         row_dict['p_value'] = round(chi['p_value'], 6)
         row_dict['chi_square'] = chi['chi_square']
         row_dict['F'] = f_coeff['F']
