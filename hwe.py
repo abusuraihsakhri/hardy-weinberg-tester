@@ -408,7 +408,13 @@ def diagnose_deviation(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
         'deviation_type': f_result['deviation_type'],
         'possible_reasons': reasons,
         'warnings': warnings,
-        'recommendation': 'Use exact test' if n < 25 or min(p, q) < 0.01 else 'Chi-square test is appropriate',
+        'recommendation': (
+            'No informative HWE test for a monomorphic locus'
+            if min(p, q) == 0
+            else 'Use exact test'
+            if n < 25 or min(exp['expected_AA'], exp['expected_Aa'], exp['expected_aa']) < 5
+            else 'Chi-square test is appropriate'
+        ),
     }
 
 
