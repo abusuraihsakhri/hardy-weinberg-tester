@@ -49,3 +49,27 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Run Pyodide browser smoke test
         run: python tests/browser_smoke.py
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose
+        run: AUDIT_SECRET_KEY=ci-only-test-key docker compose config --quiet
+      - name: Build container
+        run: docker build -t hardy-weinberg-ci .
+      - name: Smoke-test API container
+        run: |
+          docker run -d --name hwe-test -p 127.0.0.1:8000:8000 \
+            -e AUDIT_SECRET_KEY=ci-only-test-key hardy-weinberg-ci
+          curl -fsS --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:8000/health
+          curl -fsS -X POST http://127.0.0.1:8000/api/hwe/analyze \
+            -H 'Content-Type: application/json' \
+            -d '{"hom_ref":25,"het":50,"hom_alt":25}' | python -m json.tool
+      - name: Inspect container on failure
+        if: failure()
+        run: docker logs hwe-test || true
+      - name: Stop test container
+        if: always()
+        run: docker rm -f hwe-test || true
