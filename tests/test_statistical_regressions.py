@@ -78,3 +78,16 @@ def test_audit_detects_last_entry_tampering():
     audit.log("test", "operator", "CREATED", {"status": "ok"})
     audit.logs[0]["payload_hash"] = "forged"
     assert not audit.verify_integrity()
+
+
+def test_batch_export_escapes_spreadsheet_formulas(tmp_path):
+    import csv
+    from hwe import process_batch
+    source = tmp_path / "in.csv"
+    target = tmp_path / "out.csv"
+    source.write_text("locus,AA,Aa,aa\\n=1+1,25,50,25\\n".replace("\\n", "\n"), encoding="utf-8")
+    process_batch(str(source), str(target))
+    with target.open(newline="", encoding="utf-8") as handle:
+        row = next(csv.DictReader(handle))
+    assert row["locus"] == "'=1+1"
+    assert float(row["p_value"]) == 1.0
