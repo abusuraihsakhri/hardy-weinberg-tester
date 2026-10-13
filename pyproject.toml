@@ -35,13 +35,17 @@ web = [
 ]
 test = [
     "pytest>=7.0",
+    "httpx>=0.27",
 ]
 
 [project.scripts]
 hwe-tester = "cli:main"
 
+[tool.setuptools]
+py-modules = ["hwe", "cli", "enrichment", "simulator"]
+
 [tool.setuptools.packages.find]
-include = ["hwe*", "agents*"]
+include = ["agents*"]
 
 [tool.pytest.ini_options]
 testpaths = [".", "tests"]
