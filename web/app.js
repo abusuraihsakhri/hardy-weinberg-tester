@@ -163,7 +163,11 @@ async function initialize() {
       throw Error("Pyodide script could not be loaded.");
     }
     python = await loadPyodide({indexURL: CDN});
-    const response = await fetch("./hwe.py");
+    let response = await fetch("./hwe.py");
+    // In the source checkout, the Python file is one directory above web/.
+    if (!response.ok && location.pathname.endsWith("/web/")) {
+      response = await fetch("../hwe.py");
+    }
     if (!response.ok) throw Error("Could not fetch hwe.py (HTTP " + response.status + ").");
     python.FS.writeFile("hwe.py", await response.text());
     python.runPython("import json, hwe");
