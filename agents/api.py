@@ -3,7 +3,8 @@ FastAPI REST API Server for Hardy Weinberg Tester.
 """
 from typing import Dict, Any, List
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StrictInt
+from hwe import full_hwe_analysis
 from .base import AuditLogger, PHIGuard
 from .models import SystemTaskPayload, ConsensusDossier
 from .supervisor import SystemSupervisor
@@ -19,6 +20,12 @@ app = FastAPI(
 
 class ChatRequest(BaseModel):
     query: str
+
+
+class HWECounts(BaseModel):
+    hom_ref: StrictInt = Field(ge=0)
+    het: StrictInt = Field(ge=0)
+    hom_alt: StrictInt = Field(ge=0)
 
 
 @app.get("/health")
@@ -53,3 +60,9 @@ def api_chat(req: ChatRequest):
 @app.get("/api/audit/logs")
 def api_audit_logs():
     return {"audit_trail": AuditLogger.get_trail(), "verified": AuditLogger.verify_integrity()}
+
+
+@app.post("/api/hwe/analyze")
+def api_hwe_analyze(counts: HWECounts):
+    """Analyze biallelic diploid genotype counts, without storing inputs."""
+    return full_hwe_analysis(counts.hom_ref, counts.het, counts.hom_alt)

@@ -215,102 +215,61 @@ def _gammainc_cf(a: float, x: float) -> float:
 # ---------------------------------------------------------------------------
 
 def exact_test(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
-    """Exact test for HWE (analogous to Fisher's exact test).
+    """Two-sided conditional exact HWE test (probability-ordering definition).
 
-    For small samples, computes the probability of observing genotype
-    counts as or more extreme than observed under HWE.
-
-    Uses the multinomial probability approach:
-    P(genotype | HWE) = n! / (nAA! × nAa! × naa!) × (p²)^nAA × (2pq)^nAa × (q²)^naa
-
-    We enumerate possible configurations and sum probabilities.
-
-    Raises:
-        TypeError: If any count is not an integer.
-        ValueError: If any count is negative.
+    Condition on the observed reference/alternate allele counts. The
+    probability of a genotype configuration is proportional to
+    n! * 2**n_het / (n_ref_hom! * n_het! * n_alt_hom!).
+    Log weights prevent factorial overflow and underflow for large samples.
     """
     _validate_genotype_counts(hom_ref, het, hom_alt)
     n = hom_ref + het + hom_alt
     if n == 0:
         return {'p_value': 1.0, 'method': 'exact', 'error': 'No genotypes observed'}
 
-    freqs = allele_frequencies(hom_ref, het, hom_alt)
-    p, q = freqs['p'], freqs['q']
-
-    # Total allele counts
     n_ref = 2 * hom_ref + het
     n_alt = 2 * hom_alt + het
+    rare = min(n_ref, n_alt)
+    common = max(n_ref, n_alt)
 
-    # Observed probability under HWE
-    obs_prob = _hw_genotype_probability(hom_ref, het, hom_alt, p, q)
+    # The conditional sample space has fixed allele counts and heterozygote
+    # parity. All listed states have identical numbers of each allele.
+    def log_weight(heterozygotes: int) -> float:
+        hom_rare = (rare - heterozygotes) // 2
+        hom_common = (common - heterozygotes) // 2
+        return (math.lgamma(n + 1) - math.lgamma(hom_rare + 1)
+                - math.lgamma(heterozygotes + 1)
+                - math.lgamma(hom_common + 1)
+                + heterozygotes * math.log(2.0))
 
-    # Enumerate all possible genotype configurations with same allele counts
-    # nAA can range from max(0, n_ref - n) to min(n_ref // 2, n)
-    # nAa = n_ref - 2*nAA
-    # naa = n - nAA - nAa
-
-    total_prob = 0.0
-    extreme_prob = 0.0
-
-    max_nAA = min(n_ref // 2, n)
-    min_nAA = max(0, n_ref - n)
-
-    for nAA in range(min_nAA, max_nAA + 1):
-        nAa = n_ref - 2 * nAA
-        naa = n - nAA - nAa
-
-        if nAa < 0 or naa < 0:
-            continue
-
-        prob = _hw_genotype_probability(nAA, nAa, naa, p, q)
-        total_prob += prob
-
-        # Two-tailed: sum probabilities <= observed probability
-        if prob <= obs_prob + 1e-12:
-            extreme_prob += prob
-
-    p_value = extreme_prob / total_prob if total_prob > 0 else 1.0
-
-    return {
-        'p_value': round(p_value, 6),
+    observed_log_weight = log_weight(het)
+    log_weights = [
+        log_weight(h) for h in range(rare % 2, rare + 1, 2)
+    ]
+    max_log_weight = max(log_weights)
+    scaled_weights = [math.exp(log_w - max_log_weight) for log_w in log_weights]
+    total_weight = math.fsum(scaled_weights)
+    # Relative log-space tolerance handles equivalent states without
+    # incorrectly admitting every state when absolute probabilities are tiny.
+    tolerance = 1e-10
+    tail_weight = math.fsum(
+        weight for log_w, weight in zip(log_weights, scaled_weights)
+        if log_w <= observed_log_weight + tolerance
+    )
+    p_value = min(1.0, max(0.0, tail_weight / total_weight))
+    freqs = allele_frequencies(hom_ref, het, hom_alt)
+    result = {
+        'p_value': p_value,
         'method': 'exact',
         'in_hwe': p_value > 0.05,
         'alpha': 0.05,
         'observed': {'AA': hom_ref, 'Aa': het, 'aa': hom_alt},
-        'allele_freq': {'p': round(p, 6), 'q': round(q, 6)},
+        'allele_freq': {'p': round(freqs['p'], 6), 'q': round(freqs['q'], 6)},
         'sample_size': n,
     }
-
-
-def _hw_genotype_probability(nAA: int, nAa: int, naa: int,
-                              p: float, q: float) -> float:
-    """Multinomial probability of genotype counts under HWE.
-
-    P = n!/(nAA!×nAa!×naa!) × (p²)^nAA × (2pq)^nAa × (q²)^naa
-    Uses log-space to avoid overflow.
-    """
-    n = nAA + nAa + naa
-    if n == 0:
-        return 1.0
-
-    # Log of multinomial coefficient
-    log_coeff = (math.lgamma(n + 1) - math.lgamma(nAA + 1) -
-                 math.lgamma(nAa + 1) - math.lgamma(naa + 1))
-
-    # Log of probability product
-    log_prob = 0.0
-    if nAA > 0:
-        log_prob += nAA * 2 * math.log(p) if p > 0 else float('-inf')
-    if nAa > 0:
-        log_prob += nAa * (math.log(2) + math.log(p) + math.log(q)) if p > 0 and q > 0 else float('-inf')
-    if naa > 0:
-        log_prob += naa * 2 * math.log(q) if q > 0 else float('-inf')
-
-    log_total = log_coeff + log_prob
-
-    if log_total < -700:  # Underflow protection
-        return 0.0
-    return math.exp(log_total)
+    if rare == 0:
+        result['warning'] = 'Monomorphic locus: no HWE deviation can be assessed'
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +408,13 @@ def diagnose_deviation(hom_ref: int, het: int, hom_alt: int) -> Dict[str, Any]:
         'deviation_type': f_result['deviation_type'],
         'possible_reasons': reasons,
         'warnings': warnings,
-        'recommendation': 'Use exact test' if n < 25 or min(p, q) < 0.01 else 'Chi-square test is appropriate',
+        'recommendation': (
+            'No informative HWE test for a monomorphic locus'
+            if min(p, q) == 0
+            else 'Use exact test'
+            if n < 25 or min(exp['expected_AA'], exp['expected_Aa'], exp['expected_aa']) < 5
+            else 'Chi-square test is appropriate'
+        ),
     }
 
 
@@ -517,32 +482,35 @@ def benjamini_hochberg_correction(p_values: List[float],
     if m == 0:
         return {'results': [], 'num_tests': 0}
 
-    # Sort p-values and track original indices
-    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    # Benjamini-Hochberg is a step-up test: once the largest passing rank
+    # is found, all lower ranks must also be rejected, even if their own
+    # rank-wise comparison failed.
+    indexed = sorted(enumerate(p_values), key=lambda item: item[1])
+    ordered = [p for _, p in indexed]
+    adjusted = [0.0] * m
+    minimum = 1.0
+    for i in range(m - 1, -1, -1):
+        minimum = min(minimum, ordered[i] * m / (i + 1))
+        adjusted[i] = minimum
 
     results = [None] * m
-    prev_critical = 0.0
-
-    for rank, (orig_idx, p) in enumerate(indexed):
-        critical = (rank + 1) / m * alpha
-        significant = p <= critical
-        results[orig_idx] = {
-            'test': orig_idx + 1,
+    for rank, ((original_idx, p), adjusted_p) in enumerate(
+            zip(indexed, adjusted), start=1):
+        results[original_idx] = {
+            'test': original_idx + 1,
             'p_value': p,
-            'rank': rank + 1,
-            'critical_value': round(critical, 6),
-            'significant': significant,
+            'rank': rank,
+            'critical_value': rank / m * alpha,
+            'adjusted_p_value': adjusted_p,
+            'significant': adjusted_p <= alpha,
         }
-
-    num_significant = sum(1 for r in results if r['significant'])
 
     return {
         'num_tests': m,
         'alpha': alpha,
-        'num_significant': num_significant,
+        'num_significant': sum(row['significant'] for row in results),
         'results': results,
     }
-
 
 # ---------------------------------------------------------------------------
 # Full HWE Analysis
@@ -597,6 +565,16 @@ def _parse_genotype_value(value: Any, field_name: str, row_num: int) -> int:
             f"Genotype counts must be non-negative."
         )
     return parsed
+
+
+def _protect_spreadsheet_cell(value: Any) -> Any:
+    """Prevent spreadsheet applications from evaluating imported text as formulas.
+
+    Applies only to source strings, not computed numerical output.
+    """
+    if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 def process_batch(input_csv: str, output_csv: str) -> List[Dict[str, Any]]:
@@ -656,7 +634,7 @@ def process_batch(input_csv: str, output_csv: str) -> List[Dict[str, Any]]:
         chi = chi_square_test(hom_ref, het, hom_alt)
         f_coeff = inbreeding_coefficient(hom_ref, het, hom_alt)
 
-        row_dict = dict(r)
+        row_dict = {key: _protect_spreadsheet_cell(value) for key, value in r.items()}
         row_dict['p_value'] = round(chi['p_value'], 6)
         row_dict['chi_square'] = chi['chi_square']
         row_dict['F'] = f_coeff['F']

@@ -6,14 +6,13 @@ import time
 import random
 import sys
 
-# Ensure audit key is available for simulator runs
-os.environ.setdefault("AUDIT_SECRET_KEY", os.getenv("AUDIT_SECRET_KEY", "simulator-runtime-audit-key-change-in-production"))
-
 from agents.models import SystemTaskPayload
 from agents.supervisor import SystemSupervisor
 from agents.base import PHIGuard, SecurityException, AuditLogger
 
 def run_simulation(iterations: int = 100):
+    if iterations < 1:
+        raise ValueError("iterations must be a positive integer")
     print(f"Starting Distributed Component Simulation on Hardy Weinberg Tester ({iterations} tasks)...")
     supervisor = SystemSupervisor(model_provider="mock")
     start_time = time.time()

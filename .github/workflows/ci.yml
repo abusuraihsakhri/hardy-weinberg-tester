@@ -1,40 +1,75 @@
-name: Hardy Weinberg Tester CI/CD & Security Verification
+name: Test and security checks
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master]
   pull_request:
-    branches: [ master, main ]
+    branches: [master]
 
 jobs:
-  test-and-audit:
+  python:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      AUDIT_SECRET_KEY: "ci-test-key-not-for-production"
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[web,test]"
+      - name: Compile sources
+        run: python -m compileall -q hwe.py cli.py agents tests
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Check JavaScript syntax
+        run: node --check web/app.js
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Check audit integrity
+        run: |
+          python -c "from agents.base import AuditLogger; assert AuditLogger.verify_integrity()"
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+      - name: Run Pyodide browser smoke test
+        run: python tests/browser_smoke.py
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install fastapi uvicorn pydantic pytest
-
-    - name: Run Pytest Suite
-      run: |
-        pytest -v
-
-    - name: Security SAST & Zero-PHI Audit
-      run: |
-        python -c "
-        from agents.base import PHIGuard, AuditLogger
-        import pytest
-        assert AuditLogger.verify_integrity() is True
-        print('Security & Zero-PHI Audit Passed!')
-        "
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose
+        run: AUDIT_SECRET_KEY=ci-only-test-key docker compose config --quiet
+      - name: Build container
+        run: docker build -t hardy-weinberg-ci .
+      - name: Smoke-test API container
+        run: |
+          docker run -d --name hwe-test -p 127.0.0.1:8000:8000 \
+            -e AUDIT_SECRET_KEY=ci-only-test-key hardy-weinberg-ci
+          curl -fsS --retry 20 --retry-delay 1 --retry-connrefused http://127.0.0.1:8000/health
+          curl -fsS -X POST http://127.0.0.1:8000/api/hwe/analyze \
+            -H 'Content-Type: application/json' \
+            -d '{"hom_ref":25,"het":50,"hom_alt":25}' | python -m json.tool
+      - name: Inspect container on failure
+        if: failure()
+        run: docker logs hwe-test || true
+      - name: Stop test container
+        if: always()
+        run: docker rm -f hwe-test || true

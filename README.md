@@ -1,199 +1,101 @@
-# Hardy Weinberg Tester
+# Hardy–Weinberg Tester
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg?logo=python&logoColor=white)
-![Audit Trail](https://img.shields.io/badge/Audit-HMAC--SHA256_Tamper--Evident-brightgreen.svg)
-![Zero-PHI Guard](https://img.shields.io/badge/Guard-Zero--PHI_Outbound-blue.svg)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+A Python toolkit for evaluating Hardy–Weinberg equilibrium (HWE) in diploid biallelic genotype counts. It provides a command-line interface, batch CSV analysis, a browser calculator, and an optional FastAPI service.
 
----
+## Capabilities
 
-## What It Does
+- Reference and alternate allele frequencies, expected genotype counts and observed/expected heterozygosity
+- Pearson chi-square test with one degree of freedom
+- Two-sided conditional exact HWE test using numerically stable log probabilities
+- Inbreeding coefficient `F = 1 − Ho / He` and descriptive deviation warnings
+- Bonferroni and Benjamini–Hochberg multiple-testing corrections
+- CSV batch processing, with exported chi-square statistics, F and Bonferroni results
+- Browser calculations using the **same Python engine** via Pyodide; no backend needed
+- Optional audit/supervisor CLI and API features, separate from the statistical methods
 
-Hardy-Weinberg Equilibrium Tester for genotype frequency analysis.
+A significant HWE test does not identify a specific biological mechanism. A nonsignificant p-value does not demonstrate that equilibrium holds. The chi-square approximation can be unreliable with sparse expected counts; prefer the exact test in that setting. The tool assumes independent autosomal diploid observations and does not account for relatedness, population stratification, sex-linked inheritance or genotype uncertainty.
 
-Tests genotype frequencies for HWE using chi-square and exact tests,
-calculates inbreeding coefficients, provides deviation diagnostics,
-and supports multiple testing correction.
+## Browser application
 
-Core HWE calculations use Python stdlib only (no external dependencies).
-
----
-
-## Key Capabilities
-
-### Analytical Functions
-
-- **`allele_frequencies()`**: Calculate allele frequencies from genotype counts.
-- **`expected_genotype_frequencies()`**: Calculate expected Hardy-Weinberg genotype frequencies (p², 2pq, q²).
-- **`expected_genotype_counts()`**: Calculate expected genotype counts under HWE.
-- **`chi_square_test()`**: Chi-square goodness-of-fit test for HWE.
-- **`exact_test()`**: Exact test for small samples (Fisher's exact test equivalent).
-- **`inbreeding_coefficient()`**: Calculate F = 1 - (Ho / He).
-- **`diagnose_deviation()`**: Diagnose potential reasons for HWE deviation.
-- **`bonferroni_correction()`**: Bonferroni multiple testing correction.
-- **`benjamini_hochberg_correction()`**: Benjamini-Hochberg FDR correction.
-- **`full_hwe_analysis()`**: Complete HWE analysis combining all methods.
-- **`process_batch()`**: Batch process genotype data from CSV.
-
----
-
-## Installation
+The browser application is served from `web/index.html`. For local use, run from the repository root:
 
 ```bash
-# Clone the repository
+python -m http.server 8000
+```
+
+Then open **http://localhost:8000/web/**. Enter AA, Aa and aa genotype counts to view allele frequencies, exact and chi-square p-values, expected counts, and F. Alternatively, choose a CSV with headers `hom_ref,het,hom_alt` or `AA,Aa,aa` and download results.
+
+The first visit requires internet access to load Pyodide 0.28.2 from jsDelivr. The browser then fetches this repository's `hwe.py` and runs the statistics locally. Input counts and CSV data are not uploaded by the browser application. Requests to the CDN reveal ordinary request metadata to that provider. Very large batches may take longer to process.
+
+GitHub Pages publishing is defined in `.github/workflows/pages.yml`. The repository's Pages setting must use **GitHub Actions** for publishing. Do not assume a public site is available until the deployment completes and its URL has been verified.
+
+## Python installation
+
+Requires Python 3.10 or newer.
+
+```bash
 git clone https://github.com/abusuraihsakhri/hardy-weinberg-tester.git
 cd hardy-weinberg-tester
-
-# Install with web dependencies (optional)
-pip install -e ".[web]"
-
-# Install with test dependencies
-pip install -e ".[test]"
+python -m pip install -e ".[test]"
 ```
 
-### Environment Variables
+Core mathematical functions in `hwe.py` use only the standard library. The installed CLI imports Pydantic through the optional supervisor code.
 
-The HMAC-SHA256 audit trail requires a secret key:
+## CLI examples
 
 ```bash
-# Linux/macOS
-export AUDIT_SECRET_KEY="your-secure-random-key"
-
-# Windows
-set AUDIT_SECRET_KEY=your-secure-random-key
+hwe-tester test --hom-ref 25 --het 50 --hom-alt 25
+hwe-tester exact --hom-ref 2 --het 1 --hom-alt 2
+hwe-tester f --hom-ref 40 --het 20 --hom-alt 40
+hwe-tester analyze --hom-ref 25 --het 50 --hom-alt 25
+hwe-tester diagnose --hom-ref 40 --het 20 --hom-alt 40
+hwe-tester correct --p-values 0.02,0.029,0.049 --method bh
+hwe-tester batch -i sample.csv -o results.csv
 ```
 
-**Important:** Never hardcode the audit secret key in source code. Use environment variables or a secrets manager.
+The batch processor applies chi-square p-values and Bonferroni correction; its adjusted significance flags should not be used without inspecting sparse-count warnings and, when necessary, performing exact tests separately.
 
----
+## Optional API and audit operations
 
-## CLI Usage
-
-### Chi-square HWE Test
 ```bash
-python cli.py test --hom-ref 25 --het 50 --hom-alt 25
+python -m pip install -e ".[web]"
+export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+uvicorn agents.api:app --host 127.0.0.1 --port 8000
 ```
 
-### Exact Test (Small Samples)
+Submit counts to `POST /api/hwe/analyze`, for example:
+
 ```bash
-python cli.py exact --hom-ref 2 --het 1 --hom-alt 2
+curl -sS -X POST http://127.0.0.1:8000/api/hwe/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{"hom_ref":25,"het":50,"hom_alt":25}'
 ```
 
-### Inbreeding Coefficient
+The same service exposes `/health`, `/metrics`, `/api/audit`, `/api/audit/logs` and `/api/chat`. The supervisor/chat provider in this project is a deterministic **mock**, not a validated clinical system or live language-model integration. The PHI guard uses pattern matching, which cannot guarantee de-identification, and the HMAC trail is stored **in process memory**, not in durable storage. Do not expose these service endpoints on an untrusted network without authentication, transport security, and appropriate safeguards. Do not submit patient-identifiable information.
+
+For the container:
+
 ```bash
-python cli.py f --hom-ref 40 --het 20 --hom-alt 40
+export AUDIT_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+docker compose up --build
 ```
 
-### Deviation Diagnosis
-```bash
-python cli.py diagnose --hom-ref 40 --het 20 --hom-alt 40
-```
-
-### Multiple Testing Correction
-```bash
-python cli.py correct --p-values 0.01,0.03,0.04 --method bonferroni
-python cli.py correct --p-values 0.01,0.03,0.04 --method bh
-```
-
-### Full Analysis
-```bash
-python cli.py analyze --hom-ref 25 --het 50 --hom-alt 25
-```
-
-### Batch Processing from CSV
-```bash
-python cli.py batch -i input.csv -o results.csv
-```
-
-### Audit Commands (Enterprise Features)
-```bash
-python cli.py audit --task-id TASK-001 --primary-metric 12.0
-python cli.py chat "What does this result mean?"
-python cli.py verify-audit
-```
-
----
-
-## CSV Input Format
-
-The batch processor accepts CSV files with genotype counts:
-
-```csv
-hom_ref,het,hom_alt
-25,50,25
-40,20,40
-```
-
-Alternative column names are also accepted: `AA`, `Aa`, `aa` or `homozygous_ref`, `heterozygous`, `homozygous_alt`.
-
----
-
-## Security Features
-
-- **Zero-PHI Outbound Interceptor:** AST and regex inspection blocking SSNs, MRNs, phone numbers, and patient identifiers.
-- **Tamper-Evident HMAC-SHA256 Audit Trail:** Chained, cryptographically signed logs for every evaluation.
-
----
+The container runs the FastAPI service on port 8000. Docker Compose requires `AUDIT_SECRET_KEY` from the host environment.
 
 ## Testing
 
-Run the automated test suite:
-
 ```bash
-pytest -v
+python -m pip install -e ".[web,test]"
+python -m pytest -q
+python -m compileall -q hwe.py cli.py agents tests
+node --check web/app.js
+python -m pip check
 ```
 
-All 38+ tests cover core HWE calculations, statistical tests, multiple testing correction, batch processing, PHI guard enforcement, and audit trail integrity.
+GitHub Actions runs the Python tests across Python 3.10–3.13. Regression tests independently check exact p-values, Benjamini–Hochberg step-up decisions, audit tampering detection and API input validation.
 
----
+## Technology, compatibility and license
 
-## Container Deployment
+Python standard library, Pydantic v2, optional FastAPI/Uvicorn, and Pyodide 0.28.2 for browser Python. The browser app requires a current WebAssembly-enabled browser (Chrome, Firefox, Edge or Safari) and network access to the Pyodide CDN on first load. There is no JavaScript bundler or Node application dependency.
 
-```bash
-docker build -t hardy-weinberg-tester .
-docker run -p 8000:8000 -e AUDIT_SECRET_KEY=your-secret hardy-weinberg-tester
-```
-
-Or using Docker Compose:
-
-```bash
-docker-compose up
-```
-
----
-
-## Project Structure
-
-```
-hardy-weinberg-tester/
-├── hwe.py                  # Core HWE calculations and statistical tests
-├── cli.py                  # Command-line interface
-├── test_hwe.py             # Core module tests
-├── conftest.py             # Pytest configuration
-├── agents/                 # Enterprise agent modules
-│   ├── base.py             # PHI Guard, HMAC Audit Trail
-│   ├── models.py           # Pydantic data models
-│   ├── supervisor.py       # Multi-agent orchestrator
-│   ├── workers.py          # Specialized worker agents
-│   ├── api.py              # FastAPI REST endpoints
-│   ├── metrics.py          # Prometheus metrics
-│   ├── learning.py         # Bayesian calibration engine
-│   ├── streamer.py         # WebSocket telemetry
-│   └── llm_factory.py      # LLM provider abstraction
-├── enrichment.py           # Domain enrichment feature suite
-├── simulator.py            # High-throughput simulation
-├── web/index.html          # Operations dashboard
-├── tests/                  # Additional test suites
-├── pyproject.toml          # Project metadata and dependencies
-├── Dockerfile              # Container build
-├── docker-compose.yml      # Container orchestration
-├── openapi_spec.json       # OpenAPI 3.1 specification
-└── benchmark_dataset.json  # Golden benchmark test cases
-```
-
----
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
+Licensed under the [MIT License](LICENSE).
