@@ -165,7 +165,7 @@ async function initialize() {
     python = await loadPyodide({indexURL: CDN});
     let response = await fetch("./hwe.py");
     // In the source checkout, the Python file is one directory above web/.
-    if (!response.ok && location.pathname.endsWith("/web/")) {
+    if (!response.ok && (location.pathname.endsWith("/web/") || location.pathname.endsWith("/web/index.html"))) {
       response = await fetch("../hwe.py");
     }
     if (!response.ok) throw Error("Could not fetch hwe.py (HTTP " + response.status + ").");
